@@ -1,0 +1,46 @@
+package component:typst-wasm-component;
+
+world typst {
+    type font = list<u8>;
+
+    record render-options {
+        template: string,
+        fonts: list<font>
+    }
+
+    record package-version {
+        major: u32,
+        minor: u32,
+        patch: u32,
+    }
+
+    type template-handle = u32;
+
+    record package-spec {
+        namespace: string,
+        name: string,
+        version: package-version,
+    }
+
+    variant package-error {
+        not-found(package-spec),
+        version-not-found(tuple<package-spec, package-version>),
+        network-failed(option<string>),
+        malformed-archive(option<string>),
+        other(option<string>)
+    }
+
+    variant file-error {
+        not-found(string),
+        access-denied,
+        is-directory,
+        not-source,
+        invalid-utf8,
+        package-error(package-error),
+        other(option<string>)
+    }
+
+    export compile-template: func(options: render-options) -> result<template-handle, string>;
+    export render-pdf: func(template: template-handle, data-json: string) -> result<list<u8>, string>;
+    import resolve-file: func(spec: option<package-spec>, vpath: string) -> result<list<u8>, file-error>;
+}
