@@ -4,7 +4,7 @@
 
 ```elixir
 Mix.install([
-  {:wasmex, "~> 0.13.0"},
+  {:wasmex, "~> 0.14.0"},
   {:kino, "~> 0.18.0"},
 ])
 ```
@@ -260,4 +260,4 @@ Kino.Download.new(
 )
 ```
 
-<!-- livebook:{"offset":6474,"stamp":{"token":"XCP.mQS09svgY2DXKsSABsNgTAmgia7AbAtk5f7qLPc20zTrE2q7GNIvUnpivtJ4q_rGl6nDffK58zco7GlDxg6hKyIUcNiCjUVSrVoPhg","version":2}} -->
+<!-- livebook:{"offset":6474,"stamp":{"token":"XCP.eGPxw7WqW8ouL3TKb9VTtKxU-kqLYsChr5_bpNu8ZJ_TXGCVXjhlpIi7IAq4aqHwq1_mQ3213g76ylwtncK_3q0QyZNmzsbX8smgaw","version":2}} -->
