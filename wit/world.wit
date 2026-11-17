@@ -41,6 +41,8 @@ world typst {
     }
 
     export compile-template: func(options: render-options) -> result<template-handle, string>;
+    /// Drops a compiled template. Returns false when the handle is unknown.
+    export free-template: func(template: template-handle) -> bool;
     export render-pdf: func(template: template-handle, data-json: string) -> result<list<u8>, string>;
     import resolve-file: func(spec: option<package-spec>, vpath: string) -> result<list<u8>, file-error>;
 }

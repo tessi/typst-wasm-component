@@ -4,7 +4,7 @@
 
 ```elixir
 Mix.install([
-  {:wasmex, "~> 0.14.0"},
+  {:wasmex, "~> 0.16.1"},
   {:kino, "~> 0.18.0"},
 ])
 ```
@@ -19,7 +19,7 @@ defmodule Typst do
     {:ok, init_arg}
   end
 
-  @base_file_path "/Users/philippte/dev/typst-wasm-component/demo"
+  @base_file_path Path.join(__DIR__, "demo")
 
   def resolve_file(:none, vpath) do
     dbg("resolve single file: #{vpath}")
@@ -82,6 +82,11 @@ defmodule Typst do
 
     {:ok, result} = Wasmex.Components.call_function(pid, :"compile-template", [render_options], 10_000)
     result
+  end
+
+  def free_template(pid, template_handle) do
+    {:ok, freed?} = Wasmex.Components.call_function(pid, :"free-template", [template_handle])
+    freed?
   end
 
   def render_pdf(pid, template_handle, data) do

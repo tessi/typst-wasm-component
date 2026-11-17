@@ -1,23 +1,36 @@
 # Typst Wasm Component
 
-This is a Wasm Component of [typst](), the modern PDF creation toolset.
+This is a Wasm Component of [typst](https://typst.app) (0.15), the modern PDF creation toolset.
 It includes an Elixir livebook for easy testing and example usage.
 
 ## Compilation
 
 prepare by installing rust and the necessary targets:
 
-´´´
+```
 rustup target add wasm32-wasip2
-´´´
+```
 
 them compile the .wasm component with:
 
-´´´
+```
 cargo build --target=wasm32-wasip2 --release
-´´´
+```
 
-and find it under ´target/wasm32-wasip2/release/typst_wasm_component.wasm´.
+and find it under `target/wasm32-wasip2/release/typst_wasm_component.wasm`.
+No `cargo component` needed: the bindings are generated from `wit/world.wit` by `wit_bindgen::generate!` at build time.
+
+## Interface
+
+See `wit/world.wit`:
+
+* `compile-template(options)` takes the template source and fonts and returns a handle.
+* `render-pdf(handle, data-json)` renders the template with `data-json` available as `sys.inputs` and returns the PDF bytes.
+  Errors are readable, e.g. `error at main.typ:3:9: unclosed delimiter`.
+* `free-template(handle)` drops a compiled template. Call it when a template is replaced, e.g. in an editor that recompiles on every change.
+* The host implements `resolve-file(package, path)` to serve images, other `.typ` files and `@preview` packages.
+
+Tested with [wasmex](https://github.com/tessi/wasmex) 0.16.1: the release build takes about 1s to load and renders the demo invoice in 35-65ms.
 
 ## Usage
 
