@@ -1,44 +1,33 @@
 --- a/src/model/bibliography.rs
 +++ b/src/model/bibliography.rs
-@@ -43,6 +43,9 @@
- };
- use crate::routines::SpanMode;
- use crate::text::{Lang, LocalName, Region, SmallcapsElem, SubElem, SuperElem, TextElem};
--
-+
-+const CITATIONS_ENABLED: bool = false;
-+const CITATIONS_DISABLED: &str = "citations and bibliographies are disabled in this component";
-+
- /// A bibliography / reference listing.
- ///
-@@ -360,6 +363,10 @@
+@@ -360,6 +360,10 @@
          world: Tracked<dyn World + '_>,
          sources: Spanned<OneOrMultiple<DataSource>>,
      ) -> SourceResult<Derived<OneOrMultiple<DataSource>, Self>> {
-+        if !CITATIONS_ENABLED {
-+            bail!(sources.span, "{}", CITATIONS_DISABLED);
++        if cfg!(target_arch = "wasm32") {
++            bail!(sources.span, "citations and bibliographies are disabled in this component");
 +        }
 +
          let loaded = sources.load(world)?;
          let bibliography = Self::decode(&loaded)?;
          Ok(Derived::new(sources.v, bibliography))
-@@ -511,6 +518,10 @@
+@@ -511,6 +515,10 @@
          engine: &mut Engine,
          Spanned { v: source, span }: Spanned<CslSource>,
      ) -> SourceResult<Derived<CslSource, Self>> {
-+        if !CITATIONS_ENABLED {
-+            bail!(span, "{}", CITATIONS_DISABLED);
++        if cfg!(target_arch = "wasm32") {
++            bail!(span, "citations and bibliographies are disabled in this component");
 +        }
 +
          let style = match &source {
              CslSource::Named(style, deprecation) => {
                  if let Some(message) = deprecation {
-@@ -708,6 +719,10 @@
+@@ -708,6 +716,10 @@
  impl Works {
      /// Generates and formats all bibliographies and citations.
      pub fn generate(engine: &mut Engine, span: Span) -> SourceResult<Arc<Works>> {
-+        if !CITATIONS_ENABLED {
-+            bail!(span, "{}", CITATIONS_DISABLED);
++        if cfg!(target_arch = "wasm32") {
++            bail!(span, "citations and bibliographies are disabled in this component");
 +        }
 +
          let bibs_and_groups = engine.introspect(BibliographyIntrospection(span));
