@@ -1,6 +1,6 @@
 [package]
 name = "typst-wasm-component"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -16,6 +16,7 @@ wit-bindgen = "0.63.0"
 crate-type = ["cdylib"]
 
 [profile.release]
+opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true

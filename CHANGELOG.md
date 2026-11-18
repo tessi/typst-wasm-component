@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.2.0
 
+- Reduced the release component's size and startup time with size-optimized compilation and post-link optimization. The optimized component disables citations and bibliographies and supports ordinary document references.
 - Added `validate-template` to check Typst source with supplied fonts and JSON inputs, returning structured errors and warnings without allocating a template handle or exporting a PDF.
 - Updated Rust dependencies, including `typst-as-lib` 0.18.0, `rand` 0.8.8, and `time` 0.3.55, plus the Livebook's Kino dependency and GitHub Actions.
 
