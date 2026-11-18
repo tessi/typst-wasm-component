@@ -250,18 +250,21 @@ impl Guest for Component {
         let dict = Dict::from_value(input_data)
             .map_err(|_| "data-json must be a JSON object".to_string())?;
 
-        let world = template
-            .world_builder()
-            .with_inputs(dict)
-            .build()
-            .map_err(|e| e.to_string())?;
-        let doc: PagedDocument = typst::compile(&world)
-            .output
-            .map_err(|diagnostics| format_diagnostics(&world, &diagnostics))?;
+        let result = (|| {
+            let world = template
+                .world_builder()
+                .with_inputs(dict)
+                .build()
+                .map_err(|e| e.to_string())?;
+            let doc: PagedDocument = typst::compile(&world)
+                .output
+                .map_err(|diagnostics| format_diagnostics(&world, &diagnostics))?;
 
-        let pdf = typst_pdf::pdf(&doc, &PdfOptions::default()).map_err(|e| format!("{:?}", e))?;
-
-        Ok(pdf)
+            typst_pdf::pdf(&doc, &PdfOptions::default()).map_err(|e| format!("{:?}", e))
+        })();
+        // Match the cache policy used by TypstEngine::compile_with_input.
+        comemo::evict(0);
+        result
     }
 }
 

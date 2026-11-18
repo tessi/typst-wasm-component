@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  component:
+    name: Build and test component
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --target wasm32-wasip2 --component rustfmt
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '29'
+          elixir-version: '1.20.2'
+
+      - name: Check formatting
+        run: |
+          cargo +1.98.1 fmt --check
+          mix format --check-formatted test/component_e2e.exs
+
+      - name: Build the WASM component
+        run: cargo +1.98.1 build --locked --target wasm32-wasip2 --release
+
+      - name: Test the rebuilt component
+        env:
+          TYPST_COMPONENT_WASM: target/wasm32-wasip2/release/typst_wasm_component.wasm
+        run: elixir test/component_e2e.exs
+
+      - name: Test the bundled component
+        run: elixir test/component_e2e.exs
+
+      - name: Prepare release assets
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        working-directory: target/wasm32-wasip2/release
+        run: sha256sum typst_wasm_component.wasm > typst_wasm_component.wasm.sha256
+
+      - name: Upload tested release assets
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: typst-wasm-component
+          path: |
+            target/wasm32-wasip2/release/typst_wasm_component.wasm
+            target/wasm32-wasip2/release/typst_wasm_component.wasm.sha256
+          if-no-files-found: error
+          overwrite: true
+
+  release:
+    name: Publish release assets
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: component
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: typst-wasm-component
+          path: release
+
+      - name: Verify and publish the tested component
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum --check typst_wasm_component.wasm.sha256
+          gh release create "$RELEASE_TAG" \
+            typst_wasm_component.wasm typst_wasm_component.wasm.sha256 \
+            --verify-tag --generate-notes

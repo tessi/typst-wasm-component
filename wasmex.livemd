@@ -100,6 +100,7 @@ end
 
 ```elixir
 {:ok, pid} = Typst.start_link()
+{:ok, current_template} = Agent.start_link(fn -> nil end)
 ```
 
 ## Define Typst Template and Data
@@ -177,7 +178,20 @@ template = Kino.Input.read(template_cell)
 
 opens_sans = Kino.FS.file_path("OpenSans-Regular.ttf") |> File.read!() |> :binary.bin_to_list()
 fira_math = Kino.FS.file_path("FiraMath-Regular.otf") |> File.read!() |> :binary.bin_to_list()
-{:ok, handle} = Typst.compile_template(pid, template, [opens_sans, fira_math])
+{:ok, handle} =
+  Agent.get_and_update(current_template, fn previous_handle ->
+    case Typst.compile_template(pid, template, [opens_sans, fira_math]) do
+      {:ok, new_handle} = result ->
+        if previous_handle != nil do
+          Typst.free_template(pid, previous_handle)
+        end
+
+        {result, new_handle}
+
+      {:error, _reason} = error ->
+        {error, previous_handle}
+    end
+  end, 15_000)
 ```
 
 ```elixir

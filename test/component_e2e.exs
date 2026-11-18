@@ -1,0 +1,136 @@
+Mix.install([{:wasmex, "0.16.1"}])
+
+ExUnit.start()
+
+defmodule TypstComponentE2ETest do
+  use ExUnit.Case
+
+  alias Wasmex.Components
+  alias Wasmex.Wasi.WasiP2Options
+
+  @demo Path.expand("../demo", __DIR__)
+  @bundled_component Path.expand("../files/typst_wasm_component.wasm", __DIR__)
+  @package %{
+    namespace: "preview",
+    name: "invoice-maker",
+    version: %{major: 1, minor: 1, patch: 0}
+  }
+  @document """
+  #import "@preview/invoice-maker:1.1.0": invoice
+  #assert(type(invoice) == function)
+  #assert.eq(sys.inputs.amount, 3000000000)
+  #assert.eq(sys.inputs.customer.name, "Ada")
+  #set text(font: "Open Sans")
+  = #sys.inputs.customer.name
+  #image("signature.png", width: 20mm)
+  """
+
+  setup do
+    test_pid = self()
+    path = System.get_env("TYPST_COMPONENT_WASM", @bundled_component)
+
+    pid =
+      start_supervised!(
+        {Components,
+         bytes: File.read!(path),
+         wasi: %WasiP2Options{},
+         imports: %{
+           "resolve-file" =>
+             {:fn,
+              fn package, path ->
+                send(test_pid, {:resolve_file, package, path})
+                resolve_file(package, path)
+              end}
+         }}
+      )
+
+    %{component: pid}
+  end
+
+  test "renders a PDF with JSON inputs, an uploaded font, an image, and a local package", %{
+    component: component
+  } do
+    font = File.read!(Path.join(@demo, "OpenSans-Regular.ttf")) |> :binary.bin_to_list()
+    handle = compile(component, @document, [font])
+    data = JSON.encode!(%{amount: 3_000_000_000, customer: %{name: "Ada"}})
+
+    assert {:ok, {:ok, bytes}} = call(component, "render-pdf", [handle, data])
+    pdf = IO.iodata_to_binary(bytes)
+    assert <<"%PDF-", _rest::binary>> = pdf
+    assert String.ends_with?(String.trim_trailing(pdf, "\n"), "%%EOF")
+    assert_received {:resolve_file, :none, "signature.png"}
+    assert_received {:resolve_file, {:some, @package}, "typst.toml"}
+    assert_received {:resolve_file, {:some, @package}, "lib.typ"}
+
+    without_font = compile(component, @document)
+    assert {:ok, {:ok, fallback_bytes}} = call(component, "render-pdf", [without_font, data])
+    assert pdf_fonts(pdf) != pdf_fonts(IO.iodata_to_binary(fallback_bytes))
+  end
+
+  test "frees a template and leaves other handles usable", %{component: component} do
+    first = compile(component, "#rect(width: 10mm, height: 10mm)")
+    second = compile(component, "#circle(radius: 5mm)")
+
+    assert first != second
+    assert {:ok, true} = call(component, "free-template", [first])
+    assert {:ok, false} = call(component, "free-template", [first])
+
+    assert {:ok, {:error, "Invalid template handle"}} =
+             call(component, "render-pdf", [first, "{}"])
+
+    assert {:ok, {:ok, _pdf}} = call(component, "render-pdf", [second, "{}"])
+  end
+
+  test "returns errors for invalid JSON, invalid Typst, and missing files", %{
+    component: component
+  } do
+    valid = compile(component, "#rect(width: 10mm, height: 10mm)")
+    assert {:ok, {:error, message}} = call(component, "render-pdf", [valid, "{"])
+    assert message =~ "line 1"
+
+    assert {:ok, {:error, "data-json must be a JSON object"}} =
+             call(component, "render-pdf", [valid, "[]"])
+
+    invalid = compile(component, "#(1 + 2")
+    assert {:ok, {:error, diagnostic}} = call(component, "render-pdf", [invalid, "{}"])
+    assert diagnostic =~ ~r/error at .+:1:\d+/
+    assert diagnostic =~ "unclosed delimiter"
+
+    missing = compile(component, ~s[#image("missing.png")])
+    assert {:ok, {:error, diagnostic}} = call(component, "render-pdf", [missing, "{}"])
+    assert diagnostic =~ "missing.png"
+    assert_received {:resolve_file, :none, "missing.png"}
+    assert {:ok, {:ok, _pdf}} = call(component, "render-pdf", [valid, "{}"])
+  end
+
+  defp compile(component, template, fonts \\ []) do
+    assert {:ok, {:ok, handle}} =
+             call(component, "compile-template", [%{template: template, fonts: fonts}])
+
+    handle
+  end
+
+  defp call(component, function, args),
+    do: Components.call_function(component, function, args, 30_000)
+
+  defp pdf_fonts(pdf) do
+    Regex.scan(~r{/BaseFont\s*/(?:[A-Z]+\+)?([^\s/<>\[\]]+)}, pdf, capture: :all_but_first)
+  end
+
+  defp resolve_file(:none, path), do: read_fixture(path)
+
+  defp resolve_file({:some, @package}, path) do
+    read_fixture(Path.join("preview/invoice-maker-1.1.0", path))
+  end
+
+  defp resolve_file({:some, _unknown_package}, path), do: not_found(path)
+
+  defp read_fixture(path) do
+    case File.read(Path.join(@demo, path)) do
+      {:ok, bytes} -> {:ok, :binary.bin_to_list(bytes)}
+      {:error, :enoent} -> not_found(path)
+    end
+  end
+
+  defp not_found(path), do: {:error, {:"not-found", path}}
+end

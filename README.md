@@ -3,6 +3,14 @@
 This is a Wasm Component of [typst](https://typst.app) (0.15), the modern PDF creation toolset.
 It includes an Elixir livebook for easy testing and example usage.
 
+## Releases
+
+Download `typst_wasm_component.wasm` and its SHA-256 checksum from
+[GitHub Releases](https://github.com/tessi/typst-wasm-component/releases).
+To publish a release, push a version tag such as `v0.1.0` on the commit to release.
+CI builds and tests the component from that commit, then publishes the tested
+binary and its checksum.
+
 ## Compilation
 
 prepare by installing rust and the necessary targets:
@@ -31,6 +39,18 @@ See `wit/world.wit`:
 * The host implements `resolve-file(package, path)` to serve images, other `.typ` files and `@preview` packages.
 
 Tested with [wasmex](https://github.com/tessi/wasmex) 0.16.1: the release build takes about 1s to load and renders the demo invoice in 35-65ms.
+
+## End-to-end tests
+
+Run the ExUnit suite with Elixir 1.18 or newer and Hex installed:
+
+```sh
+elixir test/component_e2e.exs
+```
+
+The suite loads the bundled WASM through Wasmex 0.16.1 and checks PDF rendering,
+JSON inputs, font and file resolution, template cleanup, and error responses.
+To test a fresh build, set `TYPST_COMPONENT_WASM` to its path.
 
 ## Usage
 
