@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added `validate-template` to check Typst source with supplied fonts and JSON inputs, returning structured errors and warnings without allocating a template handle or exporting a PDF.
+- Updated Rust dependencies, including `typst-as-lib` 0.18.0, `rand` 0.8.8, and `time` 0.3.55, plus the Livebook's Kino dependency and GitHub Actions.
+
 ## v0.1.0
 
 - Updated the component to Typst 0.15.1 and the Elixir example to Wasmex 0.16.1.

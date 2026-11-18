@@ -40,7 +40,28 @@ world typst {
         other(option<string>)
     }
 
+    enum severity {
+        error,
+        warning,
+    }
+
+    record location {
+        file: string,
+        line: u32,
+        column: u32,
+    }
+
+    record diagnostic {
+        severity: severity,
+        message: string,
+        location: option<location>,
+        hints: list<string>,
+    }
+
     export compile-template: func(options: render-options) -> result<template-handle, string>;
+    /// Compiles and lays out a document with the supplied inputs, without exporting a PDF.
+    /// Document errors and warnings are returned in the list. Locations are 1-based.
+    export validate-template: func(options: render-options, data-json: string) -> result<list<diagnostic>, string>;
     /// Drops a compiled template. Returns false when the handle is unknown.
     export free-template: func(template: template-handle) -> bool;
     export render-pdf: func(template: template-handle, data-json: string) -> result<list<u8>, string>;

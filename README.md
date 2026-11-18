@@ -33,6 +33,7 @@ No `cargo component` needed: the bindings are generated from `wit/world.wit` by 
 See `wit/world.wit`:
 
 * `compile-template(options)` takes the template source and fonts and returns a handle.
+* `validate-template(options, data-json)` checks the source directly and returns structured diagnostics.
 * `render-pdf(handle, data-json)` renders the template with `data-json` available as `sys.inputs` and returns the PDF bytes.
   Errors are readable, e.g. `error at main.typ:3:9: unclosed delimiter`.
 * `free-template(handle)` drops a compiled template. Call it when a template is replaced, e.g. in an editor that recompiles on every change.
@@ -81,3 +82,27 @@ font = File.read!("demo/OpenSans-Regular.ttf") |> :binary.bin_to_list()
 File.write!("hello.pdf", pdf)
 {:ok, true} = Components.call_function(pid, "free-template", [handle])
 ```
+
+### Validate a template
+
+```elixir
+{:ok, {:ok, diagnostics}} =
+  Components.call_function(pid, "validate-template", [
+    %{template: "Title\n#(1 + 2", fonts: [font]},
+    "{}"
+  ], 30_000)
+
+valid? = Enum.all?(diagnostics, fn diagnostic ->
+  Map.get(diagnostic, :severity, diagnostic["severity"]) != :error
+end)
+```
+
+Validation runs Typst evaluation and layout with the supplied JSON object, fonts,
+and file resolver. Use `"{}"` if the document has no inputs. A clean document
+returns `[]` and warnings alone still allow compilation. Invalid JSON or setup
+failures return an inner `{:error, reason}`. Validation skips PDF export.
+
+Each diagnostic has a severity, a message, hints, and an optional location
+with a file and 1-based line and column. Wasmex exposes locations as
+`{:some, location}` or `:none`. Version 0.16.1 uses atom keys when the atoms
+already exist in the VM and string keys otherwise. The example handles both.
