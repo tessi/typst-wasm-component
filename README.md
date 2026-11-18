@@ -54,7 +54,30 @@ To test a fresh build, set `TYPST_COMPONENT_WASM` to its path.
 
 ## Usage
 
-* open the livebook (assuming you have [installed livebook](https://livebook.dev))
-* The "Define Typst Genserver" section implements an example Elixir GenServer that can use the typst wasm component and implement the elixir-side callbacks (e.g. to provide file system access)
-* The "Define Typst Template and Data" livebook section defines two example document templates - choose the example you prefer. make sure the attached/references files of this livebook work (e.g. the font files). Note that in the following cell, we define custom variables as inputs to that template. If and how you use variables is up to you, they are not strictly necessary for this example, but serve as a nice example for production use cases. E.g. in production, we might want to have a fixed invoice template with all actual data being served as variables.
-* The very last livebook cell renders a "Download PDF" button, which you can click to download your typst-rendered file.
+Run from the repository root with `elixir example.exs`:
+
+```elixir
+Mix.install([{:wasmex, "0.16.1"}])
+
+alias Wasmex.Components
+
+{:ok, pid} =
+  Components.start_link(
+    bytes: File.read!("files/typst_wasm_component.wasm"),
+    wasi: struct(Wasmex.Wasi.WasiP2Options),
+    imports: %{"resolve-file" => {:fn, fn _, path -> {:error, {:"not-found", path}} end}}
+  )
+
+font = File.read!("demo/OpenSans-Regular.ttf") |> :binary.bin_to_list()
+
+{:ok, {:ok, handle}} =
+  Components.call_function(pid, "compile-template", [
+    %{template: "#set text(font: \"Open Sans\")\nHello, #sys.inputs.name!", fonts: [font]}
+  ], 30_000)
+
+{:ok, {:ok, pdf}} =
+  Components.call_function(pid, "render-pdf", [handle, ~s({"name":"Ada"})], 30_000)
+
+File.write!("hello.pdf", pdf)
+{:ok, true} = Components.call_function(pid, "free-template", [handle])
+```
