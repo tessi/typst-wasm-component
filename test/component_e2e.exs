@@ -103,6 +103,73 @@ defmodule TypstComponentE2ETest do
     assert {:ok, {:ok, _pdf}} = call(component, "render-pdf", [valid, "{}"])
   end
 
+  test "validates with the same inputs, fonts, project files, and packages as rendering", %{
+    component: component
+  } do
+    font = File.read!(Path.join(@demo, "OpenSans-Regular.ttf")) |> :binary.bin_to_list()
+    options = %{template: @document, fonts: [font]}
+    data = JSON.encode!(%{amount: 3_000_000_000, customer: %{name: "Ada"}})
+
+    assert {:ok, {:ok, []}} = call(component, "validate-template", [options, data])
+    assert_received {:resolve_file, :none, "signature.png"}
+    assert_received {:resolve_file, {:some, @package}, "typst.toml"}
+    assert_received {:resolve_file, {:some, @package}, "lib.typ"}
+
+    assert {:ok, {:ok, [%{severity: :error, message: message}]}} =
+             call(component, "validate-template", [options, "{}"])
+
+    assert message =~ ~s(dictionary does not contain key "amount")
+
+    assert {:ok, {:error, "data-json must be a JSON object"}} =
+             call(component, "validate-template", [options, "[]"])
+
+    assert {:ok, {:error, message}} = call(component, "validate-template", [options, "{"])
+    assert message =~ "line 1"
+  end
+
+  test "returns syntax and layout errors, warnings, and hints from included files", %{
+    component: component
+  } do
+    assert {:ok,
+            {:ok,
+             [
+               %{
+                 severity: :error,
+                 message: "unclosed delimiter",
+                 location: {:some, %{file: "main.typ", line: 2, column: 2}},
+                 hints: []
+               }
+             ]}} = validate(component, "Title\n#(1 + 2")
+
+    assert {:ok, {:ok, [%{severity: :error, message: "assertion failed: layout failed"}]}} =
+             validate(component, ~s/#context assert(false, message: "layout failed")/)
+
+    assert {:ok, {:ok, [%{severity: :warning, message: "unknown font family: missingfont123"}]}} =
+             validate(component, ~s/#set text(font: "MissingFont123")\nHello/)
+
+    assert {:ok,
+            {:ok,
+             [
+               %{
+                 severity: :error,
+                 message: "unknown variable: unknown-name",
+                 location: {:some, %{file: "chapter.typ", line: 1, column: 2}},
+                 hints: [hint]
+               }
+             ]}} = validate(component, ~s/#include "chapter.typ"/)
+
+    assert hint =~ "unknown - name"
+    assert_received {:resolve_file, :none, "chapter.typ"}
+    refute_received {:resolve_file, :none, "chapter.typ"}
+
+    assert {:ok, {:ok, [%{severity: :error}]}} = validate(component, ~s/#include "chapter.typ"/)
+    assert_received {:resolve_file, :none, "chapter.typ"}
+  end
+
+  defp validate(component, template) do
+    call(component, "validate-template", [%{template: template, fonts: []}, "{}"])
+  end
+
   defp compile(component, template, fonts \\ []) do
     assert {:ok, {:ok, handle}} =
              call(component, "compile-template", [%{template: template, fonts: fonts}])
@@ -117,6 +184,7 @@ defmodule TypstComponentE2ETest do
     Regex.scan(~r{/BaseFont\s*/(?:[A-Z]+\+)?([^\s/<>\[\]]+)}, pdf, capture: :all_but_first)
   end
 
+  defp resolve_file(:none, "chapter.typ"), do: {:ok, ~c"#unknown-name"}
   defp resolve_file(:none, path), do: read_fixture(path)
 
   defp resolve_file({:some, @package}, path) do

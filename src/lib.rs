@@ -11,7 +11,7 @@ use bindings::Guest;
 use serde_json::Value as JsonValue;
 use typst::{
     World, WorldExt,
-    diag::{FileError, FileResult, PackageError, Severity, SourceDiagnostic},
+    diag::{FileError, FileResult, PackageError, Severity, SourceDiagnostic, SourceResult, Warned},
     foundations::{Bytes, Dict, FromValue, IntoValue, Value},
     syntax::{FileId, Source, VirtualRoot, package::PackageVersion},
 };
@@ -63,6 +63,27 @@ fn json_to_typst(val: JsonValue) -> Value {
     }
 }
 
+fn diagnostic_location(
+    world: &dyn World,
+    diagnostic: &SourceDiagnostic,
+) -> Option<bindings::Location> {
+    let id = diagnostic.span.id()?;
+    let range = world.range(diagnostic.span)?;
+    let source = world.source(id).ok()?;
+    let (line, column) = source.lines().byte_to_line_column(range.start)?;
+    let path = id.vpath().get_without_slash();
+    let file = match id.root() {
+        VirtualRoot::Package(package) => format!("{package}/{path}"),
+        VirtualRoot::Project if path.is_empty() => "main".to_owned(),
+        VirtualRoot::Project => path.to_owned(),
+    };
+    Some(bindings::Location {
+        file,
+        line: u32::try_from(line + 1).ok()?,
+        column: u32::try_from(column + 1).ok()?,
+    })
+}
+
 /// Turns typst diagnostics into readable lines, like
 /// `error at main.typ:3:9: unclosed delimiter (hint: ...)`.
 fn format_diagnostics(world: &dyn World, diagnostics: &[SourceDiagnostic]) -> String {
@@ -73,25 +94,12 @@ fn format_diagnostics(world: &dyn World, diagnostics: &[SourceDiagnostic]) -> St
                 Severity::Error => "error",
                 Severity::Warning => "warning",
             };
-            let location = diagnostic
-                .span
-                .id()
-                .and_then(|id| {
-                    let range = world.range(diagnostic.span)?;
-                    let source = world.source(id).ok()?;
-                    let (line, column) = source.lines().byte_to_line_column(range.start)?;
-                    let file = match id.root() {
-                        VirtualRoot::Package(package) => {
-                            format!("{}/{}", package, id.vpath().get_without_slash())
-                        }
-                        VirtualRoot::Project => id.vpath().get_without_slash().to_owned(),
-                    };
-                    let file = if file.is_empty() {
-                        "main".to_owned()
-                    } else {
-                        file
-                    };
-                    Some(format!(" at {}:{}:{}", file, line + 1, column + 1))
+            let location = diagnostic_location(world, diagnostic)
+                .map(|location| {
+                    format!(
+                        " at {}:{}:{}",
+                        location.file, location.line, location.column
+                    )
                 })
                 .unwrap_or_default();
             let hints = diagnostic
@@ -103,6 +111,22 @@ fn format_diagnostics(world: &dyn World, diagnostics: &[SourceDiagnostic]) -> St
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn to_diagnostic(world: &dyn World, diagnostic: &SourceDiagnostic) -> bindings::Diagnostic {
+    bindings::Diagnostic {
+        severity: match diagnostic.severity {
+            Severity::Error => bindings::Severity::Error,
+            Severity::Warning => bindings::Severity::Warning,
+        },
+        message: diagnostic.message.to_string(),
+        location: diagnostic_location(world, diagnostic),
+        hints: diagnostic
+            .hints
+            .iter()
+            .map(|hint| hint.v.to_string())
+            .collect(),
+    }
 }
 
 fn bytes_to_source(id: FileId, bytes: &[u8]) -> FileResult<Source> {
@@ -210,22 +234,69 @@ impl FileResolver for WasmFileResolver {
     }
 }
 
+fn build_template(
+    options: bindings::RenderOptions,
+    file_resolver: impl FileResolver + Send + Sync + 'static,
+) -> TypstEngine<TypstTemplateMainFile> {
+    TypstEngine::builder()
+        .main_file(options.template.as_str())
+        .fonts(options.fonts)
+        .add_file_resolver(file_resolver)
+        .build()
+}
+
+fn parse_inputs(data: &str) -> Result<Dict, String> {
+    let json_value = serde_json::from_str(data).map_err(|e| e.to_string())?;
+    Dict::from_value(json_to_typst(json_value))
+        .map_err(|_| "data-json must be a JSON object".to_string())
+}
+
+fn with_compiled_document<T>(
+    template: &TypstEngine<TypstTemplateMainFile>,
+    inputs: Dict,
+    use_document: impl FnOnce(&dyn World, Warned<SourceResult<PagedDocument>>) -> Result<T, String>,
+) -> Result<T, String> {
+    let result = (|| {
+        let world = template
+            .world_builder()
+            .with_inputs(inputs)
+            .build()
+            .map_err(|e| e.to_string())?;
+        let compiled = typst::compile(&world);
+        use_document(&world, compiled)
+    })();
+    // Match the cache policy used by TypstEngine::compile_with_input.
+    comemo::evict(0);
+    result
+}
+
 impl Guest for Component {
     fn compile_template(
         options: bindings::RenderOptions,
     ) -> Result<bindings::TemplateHandle, String> {
-        let file_resolver = WasmFileResolver;
-
-        let template = TypstEngine::builder()
-            .main_file(options.template.as_str())
-            .fonts(options.fonts)
-            .add_file_resolver(file_resolver)
-            .build();
+        let template = build_template(options, WasmFileResolver);
         let mut templates = TEMPLATES.lock().map_err(|_| "Failed to lock templates")?;
         let handle = templates.next_handle;
         templates.next_handle = handle.wrapping_add(1);
         templates.engines.insert(handle, template);
         Ok(handle)
+    }
+
+    fn validate_template(
+        options: bindings::RenderOptions,
+        data: String,
+    ) -> Result<Vec<bindings::Diagnostic>, String> {
+        let inputs = parse_inputs(&data)?;
+        // Keep diagnostic locations tied to the source read during this validation.
+        let template = build_template(options, WasmFileResolver.into_cached());
+        with_compiled_document(&template, inputs, |world, compiled| {
+            let errors = compiled.output.err().unwrap_or_default();
+            Ok(errors
+                .iter()
+                .chain(&compiled.warnings)
+                .map(|diagnostic| to_diagnostic(world, diagnostic))
+                .collect())
+        })
     }
 
     fn free_template(template_handle: bindings::TemplateHandle) -> bool {
@@ -245,26 +316,14 @@ impl Guest for Component {
             .get(&template_handle)
             .ok_or("Invalid template handle")?;
 
-        let json_value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        let input_data = json_to_typst(json_value);
-        let dict = Dict::from_value(input_data)
-            .map_err(|_| "data-json must be a JSON object".to_string())?;
-
-        let result = (|| {
-            let world = template
-                .world_builder()
-                .with_inputs(dict)
-                .build()
-                .map_err(|e| e.to_string())?;
-            let doc: PagedDocument = typst::compile(&world)
+        let inputs = parse_inputs(&data)?;
+        with_compiled_document(template, inputs, |world, compiled| {
+            let doc = compiled
                 .output
-                .map_err(|diagnostics| format_diagnostics(&world, &diagnostics))?;
+                .map_err(|diagnostics| format_diagnostics(world, &diagnostics))?;
 
             typst_pdf::pdf(&doc, &PdfOptions::default()).map_err(|e| format!("{:?}", e))
-        })();
-        // Match the cache policy used by TypstEngine::compile_with_input.
-        comemo::evict(0);
-        result
+        })
     }
 }
 
