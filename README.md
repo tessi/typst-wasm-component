@@ -8,25 +8,36 @@ It includes an Elixir livebook for easy testing and example usage.
 Download `typst_wasm_component.wasm` and its SHA-256 checksum from
 [GitHub Releases](https://github.com/tessi/typst-wasm-component/releases).
 To publish a release, push a version tag such as `v0.1.0` on the commit to release.
-CI builds and tests the component from that commit, then publishes the tested
-binary and its checksum.
+CI builds and tests the optimized component from that commit, then publishes
+the tested WASM file and its checksum.
+
+The release build supports document references such as `@section`. Citation
+and bibliography calls return a Typst diagnostic explaining that they are
+disabled.
 
 ## Compilation
 
-prepare by installing rust and the necessary targets:
+Install the `wasm32-wasip2` Rust target, then run the release build with
+Python 3, `patch`, and Node.js 24 available.
 
-```
+```sh
 rustup target add wasm32-wasip2
+python3 scripts/build-release.py
 ```
 
-them compile the .wasm component with:
+The script writes `target/release-bundle/typst_wasm_component.wasm`.
+It applies the [citation patch](patches/typst-library-disable-citations.patch)
+to a temporary copy of the locked Typst library, builds with Rust's size
+profile, and optimizes the component with Jco and Binaryen. When upgrading
+Typst, refresh the patch if the affected source has changed.
 
-```
-cargo build --target=wasm32-wasip2 --release
-```
+A plain Cargo build uses upstream Typst with citation support and writes the
+component to `target/wasm32-wasip2/release/typst_wasm_component.wasm`.
+The build generates bindings from `wit/world.wit` with `wit-bindgen`.
 
-and find it under `target/wasm32-wasip2/release/typst_wasm_component.wasm`.
-No `cargo component` needed: the bindings are generated from `wit/world.wit` by `wit_bindgen::generate!` at build time.
+```sh
+cargo build --locked --target wasm32-wasip2 --release
+```
 
 ## Interface
 
@@ -39,7 +50,7 @@ See `wit/world.wit`:
 * `free-template(handle)` drops a compiled template. Call it when a template is replaced, e.g. in an editor that recompiles on every change.
 * The host implements `resolve-file(package, path)` to serve images, other `.typ` files and `@preview` packages.
 
-Tested with [wasmex](https://github.com/tessi/wasmex) 0.16.1: the release build takes about 1s to load and renders the demo invoice in 35-65ms.
+Tested with [Wasmex](https://github.com/tessi/wasmex) 0.16.1.
 
 ## End-to-end tests
 
@@ -50,8 +61,8 @@ elixir test/component_e2e.exs
 ```
 
 The suite loads the bundled WASM through Wasmex 0.16.1 and checks PDF rendering,
-JSON inputs, font and file resolution, template cleanup, and error responses.
-To test a fresh build, set `TYPST_COMPONENT_WASM` to its path.
+JSON inputs, fonts, file resolution, template cleanup, and diagnostics. To test
+a fresh release build, set `TYPST_COMPONENT_WASM` to its path.
 
 ## Usage
 

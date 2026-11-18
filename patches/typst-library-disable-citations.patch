@@ -1,0 +1,35 @@
+--- a/src/model/bibliography.rs
++++ b/src/model/bibliography.rs
+@@ -360,6 +360,10 @@
+         world: Tracked<dyn World + '_>,
+         sources: Spanned<OneOrMultiple<DataSource>>,
+     ) -> SourceResult<Derived<OneOrMultiple<DataSource>, Self>> {
++        if cfg!(target_arch = "wasm32") {
++            bail!(sources.span, "citations and bibliographies are disabled in this component");
++        }
++
+         let loaded = sources.load(world)?;
+         let bibliography = Self::decode(&loaded)?;
+         Ok(Derived::new(sources.v, bibliography))
+@@ -511,6 +515,10 @@
+         engine: &mut Engine,
+         Spanned { v: source, span }: Spanned<CslSource>,
+     ) -> SourceResult<Derived<CslSource, Self>> {
++        if cfg!(target_arch = "wasm32") {
++            bail!(span, "citations and bibliographies are disabled in this component");
++        }
++
+         let style = match &source {
+             CslSource::Named(style, deprecation) => {
+                 if let Some(message) = deprecation {
+@@ -708,6 +716,10 @@
+ impl Works {
+     /// Generates and formats all bibliographies and citations.
+     pub fn generate(engine: &mut Engine, span: Span) -> SourceResult<Arc<Works>> {
++        if cfg!(target_arch = "wasm32") {
++            bail!(span, "citations and bibliographies are disabled in this component");
++        }
++
+         let bibs_and_groups = engine.introspect(BibliographyIntrospection(span));
+         Self::generate_impl(
+             engine.world,

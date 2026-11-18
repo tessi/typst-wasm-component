@@ -30,17 +30,23 @@ jobs:
           otp-version: '29'
           elixir-version: '1.20.2'
 
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+
       - name: Check formatting
         run: |
           cargo +1.98.1 fmt --check
           mix format --check-formatted test/component_e2e.exs
 
-      - name: Build the WASM component
-        run: cargo +1.98.1 build --locked --target wasm32-wasip2 --release
-
-      - name: Test the rebuilt component
+      - name: Build the optimized release component
         env:
-          TYPST_COMPONENT_WASM: target/wasm32-wasip2/release/typst_wasm_component.wasm
+          RUSTUP_TOOLCHAIN: '1.98.1'
+        run: python3 scripts/build-release.py
+
+      - name: Test the optimized release component
+        env:
+          TYPST_COMPONENT_WASM: target/release-bundle/typst_wasm_component.wasm
         run: elixir test/component_e2e.exs
 
       - name: Test the bundled component
@@ -48,7 +54,7 @@ jobs:
 
       - name: Prepare release assets
         if: github.event_name == 'push' && github.ref_type == 'tag'
-        working-directory: target/wasm32-wasip2/release
+        working-directory: target/release-bundle
         run: sha256sum typst_wasm_component.wasm > typst_wasm_component.wasm.sha256
 
       - name: Upload tested release assets
@@ -57,8 +63,8 @@ jobs:
         with:
           name: typst-wasm-component
           path: |
-            target/wasm32-wasip2/release/typst_wasm_component.wasm
-            target/wasm32-wasip2/release/typst_wasm_component.wasm.sha256
+            target/release-bundle/typst_wasm_component.wasm
+            target/release-bundle/typst_wasm_component.wasm.sha256
           if-no-files-found: error
           overwrite: true
 

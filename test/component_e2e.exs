@@ -81,6 +81,35 @@ defmodule TypstComponentE2ETest do
     assert {:ok, {:ok, _pdf}} = call(component, "render-pdf", [second, "{}"])
   end
 
+  test "rejects citations and bibliographies without disabling document references", %{
+    component: component
+  } do
+    disabled = "citations and bibliographies are disabled in this component"
+
+    for template <- ["#cite(<external-work>)", ~s[#bibliography("works.bib")]] do
+      assert {:ok, {:ok, [%{severity: :error, message: ^disabled}]}} =
+               validate(component, template)
+    end
+
+    refute_received {:resolve_file, :none, "works.bib"}
+
+    font = File.read!(Path.join(@demo, "OpenSans-Regular.ttf")) |> :binary.bin_to_list()
+
+    handle =
+      compile(
+        component,
+        """
+        #set text(font: "Open Sans")
+        #set heading(numbering: "1.")
+        = Project <project>
+        See @project.
+        """,
+        [font]
+      )
+
+    assert {:ok, {:ok, ~c"%PDF-" ++ _}} = call(component, "render-pdf", [handle, "{}"])
+  end
+
   test "returns errors for invalid JSON, invalid Typst, and missing files", %{
     component: component
   } do
