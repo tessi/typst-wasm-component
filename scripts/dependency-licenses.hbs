@@ -1,0 +1,13 @@
+License texts for the Cargo dependencies of Typst Wasm Component.
+
+{{#each licenses}}
+================================================================================
+{{name}} ({{id}})
+
+{{#each used_by}}
+{{crate.name}} {{crate.version}} (https://crates.io/crates/{{crate.name}}/{{crate.version}})
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

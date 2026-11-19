@@ -5,11 +5,11 @@ It includes an Elixir livebook for easy testing and example usage.
 
 ## Releases
 
-Download `typst_wasm_component.wasm` and its SHA-256 checksum from
-[GitHub Releases](https://github.com/tessi/typst-wasm-component/releases).
+Download `typst_wasm_component.wasm`, its SHA-256 checksum, and the accompanying
+license and notices from [GitHub Releases](https://github.com/tessi/typst-wasm-component/releases).
 To publish a release, push a version tag such as `v0.1.0` on the commit to release.
 CI builds and tests the optimized component from that commit, then publishes
-the tested WASM file and its checksum.
+the tested Wasm file with its checksum and license files.
 
 The release build supports document references such as `@section`. Citation
 and bibliography calls return a Typst diagnostic explaining that they are
@@ -29,7 +29,8 @@ The script writes `target/release-bundle/typst_wasm_component.wasm`.
 It applies the [citation patch](patches/typst-library-disable-citations.patch)
 to a temporary copy of the locked Typst library, builds with Rust's size
 profile, and optimizes the component with Jco and Binaryen. When upgrading
-Typst, refresh the patch if the affected source has changed.
+Typst, update the upstream notices in [NOTICE](NOTICE) and refresh the patch
+if the affected source has changed.
 
 A plain Cargo build uses upstream Typst with citation support and writes the
 component to `target/wasm32-wasip2/release/typst_wasm_component.wasm`.
@@ -124,3 +125,10 @@ Each diagnostic has a severity, a message, hints, and an optional location
 with a file and 1-based line and column. Wasmex exposes locations as
 `{:some, location}` or `:none`. Version 0.16.1 uses atom keys when the atoms
 already exist in the VM and string keys otherwise. The example handles both.
+
+## License
+
+The component's original code is licensed under the [Apache License, Version 2.0](LICENSE).
+See [NOTICE](NOTICE) for Typst's upstream notices and the release patch.
+Releases also include `THIRD-PARTY-LICENSES.txt` for the locked Cargo dependencies.
+Third-party code and assets retain their respective terms.

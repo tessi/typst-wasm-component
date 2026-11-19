@@ -1,6 +1,12 @@
 --- a/src/model/bibliography.rs
 +++ b/src/model/bibliography.rs
-@@ -360,6 +360,10 @@
+@@ -1,3 +1,5 @@
++// Modified by Typst Wasm Component to disable citations and bibliographies on Wasm.
++
+ use std::any::TypeId;
+ use std::fmt::{self, Debug, Formatter};
+ use std::num::NonZeroUsize;
+@@ -360,6 +362,10 @@
          world: Tracked<dyn World + '_>,
          sources: Spanned<OneOrMultiple<DataSource>>,
      ) -> SourceResult<Derived<OneOrMultiple<DataSource>, Self>> {
@@ -11,7 +17,7 @@
          let loaded = sources.load(world)?;
          let bibliography = Self::decode(&loaded)?;
          Ok(Derived::new(sources.v, bibliography))
-@@ -511,6 +515,10 @@
+@@ -511,6 +517,10 @@
          engine: &mut Engine,
          Spanned { v: source, span }: Spanned<CslSource>,
      ) -> SourceResult<Derived<CslSource, Self>> {
@@ -22,7 +28,7 @@
          let style = match &source {
              CslSource::Named(style, deprecation) => {
                  if let Some(message) = deprecation {
-@@ -708,6 +716,10 @@
+@@ -708,6 +718,10 @@
  impl Works {
      /// Generates and formats all bibliographies and citations.
      pub fn generate(engine: &mut Engine, span: Span) -> SourceResult<Arc<Works>> {

@@ -2,6 +2,7 @@
 name = "typst-wasm-component"
 version = "0.3.0"
 edition = "2024"
+license = "Apache-2.0"
 
 [dependencies]
 comemo = "0.5"

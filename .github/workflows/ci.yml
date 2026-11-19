@@ -52,10 +52,22 @@ jobs:
       - name: Test the bundled component
         run: elixir test/component_e2e.exs
 
+      - name: Collect dependency licenses
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          RUSTUP_TOOLCHAIN: '1.98.1'
+        run: |
+          cargo install --locked --version 0.9.3 --features cli cargo-about
+          cargo about generate --locked --fail --target wasm32-wasip2 \
+            --output-file target/release-bundle/THIRD-PARTY-LICENSES.txt scripts/dependency-licenses.hbs
+
       - name: Prepare release assets
         if: github.event_name == 'push' && github.ref_type == 'tag'
         working-directory: target/release-bundle
-        run: sha256sum typst_wasm_component.wasm > typst_wasm_component.wasm.sha256
+        run: |
+          sha256sum typst_wasm_component.wasm > typst_wasm_component.wasm.sha256
+          cp ../../LICENSE LICENSE.txt
+          cp ../../NOTICE NOTICE.txt
 
       - name: Upload tested release assets
         if: github.event_name == 'push' && github.ref_type == 'tag'
@@ -65,6 +77,9 @@ jobs:
           path: |
             target/release-bundle/typst_wasm_component.wasm
             target/release-bundle/typst_wasm_component.wasm.sha256
+            target/release-bundle/LICENSE.txt
+            target/release-bundle/NOTICE.txt
+            target/release-bundle/THIRD-PARTY-LICENSES.txt
           if-no-files-found: error
           overwrite: true
 
@@ -92,4 +107,5 @@ jobs:
           sha256sum --check typst_wasm_component.wasm.sha256
           gh release create "$RELEASE_TAG" \
             typst_wasm_component.wasm typst_wasm_component.wasm.sha256 \
+            LICENSE.txt NOTICE.txt THIRD-PARTY-LICENSES.txt \
             --verify-tag --generate-notes
