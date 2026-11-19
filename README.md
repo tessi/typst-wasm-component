@@ -43,12 +43,18 @@ cargo build --locked --target wasm32-wasip2 --release
 
 See `wit/world.wit`:
 
+* `add-font(font)` registers the usable faces from one font file and returns how many it added. A file with no usable faces returns an error.
+* `clear-fonts()` empties the instance's registry. Existing handles retain their fonts until freed.
 * `compile-template(options)` takes the template source and fonts and returns a handle.
 * `validate-template(options, data-json)` checks the source directly and returns structured diagnostics.
 * `render-pdf(handle, data-json)` renders the template with `data-json` available as `sys.inputs` and returns the PDF bytes.
   Errors are readable, e.g. `error at main.typ:3:9: unclosed delimiter`.
 * `free-template(handle)` drops a compiled template. Call it when a template is replaced, e.g. in an editor that recompiles on every change.
 * The host implements `resolve-file(package, path)` to serve images, other `.typ` files and `@preview` packages.
+
+Register shared fonts once per instance. With `fonts: []`, new compile and validation calls use the
+instance's registered fonts. The registry starts empty. A nonempty `fonts` list supplies all fonts
+for that call and leaves the registry untouched.
 
 Tested with [Wasmex](https://github.com/tessi/wasmex) 0.16.1.
 
@@ -81,10 +87,11 @@ alias Wasmex.Components
   )
 
 font = File.read!("demo/OpenSans-Regular.ttf") |> :binary.bin_to_list()
+{:ok, {:ok, 1}} = Components.call_function(pid, "add-font", [font], 30_000)
 
 {:ok, {:ok, handle}} =
   Components.call_function(pid, "compile-template", [
-    %{template: "#set text(font: \"Open Sans\")\nHello, #sys.inputs.name!", fonts: [font]}
+    %{template: "#set text(font: \"Open Sans\")\nHello, #sys.inputs.name!", fonts: []}
   ], 30_000)
 
 {:ok, {:ok, pdf}} =
@@ -99,7 +106,7 @@ File.write!("hello.pdf", pdf)
 ```elixir
 {:ok, {:ok, diagnostics}} =
   Components.call_function(pid, "validate-template", [
-    %{template: "Title\n#(1 + 2", fonts: [font]},
+    %{template: "Title\n#(1 + 2", fonts: []},
     "{}"
   ], 30_000)
 

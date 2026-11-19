@@ -26,11 +26,15 @@ defmodule TypstComponentE2ETest do
   """
 
   setup do
+    %{component: start_component(:primary)}
+  end
+
+  defp start_component(id) do
     test_pid = self()
     path = System.get_env("TYPST_COMPONENT_WASM", @bundled_component)
 
-    pid =
-      start_supervised!(
+    start_supervised!(
+      Supervisor.child_spec(
         {Components,
          bytes: File.read!(path),
          wasi: %WasiP2Options{},
@@ -41,10 +45,10 @@ defmodule TypstComponentE2ETest do
                 send(test_pid, {:resolve_file, package, path})
                 resolve_file(package, path)
               end}
-         }}
+         }},
+        id: id
       )
-
-    %{component: pid}
+    )
   end
 
   test "renders a PDF with JSON inputs, an uploaded font, an image, and a local package", %{
@@ -65,6 +69,61 @@ defmodule TypstComponentE2ETest do
     without_font = compile(component, @document)
     assert {:ok, {:ok, fallback_bytes}} = call(component, "render-pdf", [without_font, data])
     assert pdf_fonts(pdf) != pdf_fonts(IO.iodata_to_binary(fallback_bytes))
+  end
+
+  test "renders the same PDF with registered fonts and keeps existing handles after clearing", %{
+    component: component
+  } do
+    font = File.read!(Path.join(@demo, "OpenSans-Regular.ttf")) |> :binary.bin_to_list()
+    data = JSON.encode!(%{amount: 3_000_000_000, customer: %{name: "Ada"}})
+
+    explicit = compile(component, @document, [font])
+    assert {:ok, {:ok, expected}} = call(component, "render-pdf", [explicit, data])
+
+    assert {:ok, {:ok, 1}} = call(component, "add-font", [font])
+
+    assert {:ok, {:error, "Font file contains no usable faces"}} =
+             call(component, "add-font", [[1, 2, 3]])
+
+    shared = compile(component, @document)
+    assert {:ok, {:ok, ^expected}} = call(component, "render-pdf", [shared, data])
+
+    assert {:ok, []} = call(component, "clear-fonts", [])
+    assert {:ok, {:ok, ^expected}} = call(component, "render-pdf", [shared, data])
+
+    without_font = compile(component, @document)
+    assert {:ok, {:ok, fallback}} = call(component, "render-pdf", [without_font, data])
+    assert pdf_fonts(IO.iodata_to_binary(expected)) != pdf_fonts(IO.iodata_to_binary(fallback))
+  end
+
+  test "validates with instance-specific fonts and allows explicit per-call overrides", %{
+    component: component
+  } do
+    open_sans = File.read!(Path.join(@demo, "OpenSans-Regular.ttf")) |> :binary.bin_to_list()
+    fira_math = File.read!(Path.join(@demo, "FiraMath-Regular.otf")) |> :binary.bin_to_list()
+    template = ~s[#set text(font: "Open Sans")\nHello]
+    missing_font = "unknown font family: open sans"
+
+    assert {:ok, {:ok, [%{severity: :warning, message: ^missing_font}]}} =
+             validate(component, template)
+
+    assert {:ok, {:ok, 1}} = call(component, "add-font", [open_sans])
+    assert {:ok, {:ok, 1}} = call(component, "add-font", [fira_math])
+    assert {:ok, {:ok, []}} = validate(component, template)
+    assert {:ok, {:ok, []}} = validate(component, ~s[#set text(font: "Fira Math")\nHello])
+
+    assert {:ok, {:ok, [%{severity: :warning, message: ^missing_font}]}} =
+             call(component, "validate-template", [
+               %{template: template, fonts: [fira_math]},
+               "{}"
+             ])
+
+    second = start_component(:secondary)
+
+    assert {:ok, {:ok, [%{severity: :warning, message: ^missing_font}]}} =
+             validate(second, template)
+
+    assert {:ok, {:ok, []}} = validate(component, template)
   end
 
   test "frees a template and leaves other handles usable", %{component: component} do

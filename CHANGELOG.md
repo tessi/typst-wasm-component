@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added `add-font` and `clear-fonts` to reuse parsed fonts across templates within one instance. Compile and validation calls with an empty font list use the registered fonts.
+
 ## v0.2.0
 
 - Reduced the release component's size and startup time with size-optimized compilation and post-link optimization. The optimized component disables citations and bibliographies and supports ordinary document references.
