@@ -5,6 +5,8 @@ world typst {
 
     record render-options {
         template: string,
+        /// An empty list uses the instance's registered fonts, which are initially empty.
+        /// A nonempty list replaces them for this call.
         fonts: list<font>
     }
 
@@ -58,6 +60,11 @@ world typst {
         hints: list<string>,
     }
 
+    /// Adds the usable faces from one font file for future compile-template and validate-template calls.
+    /// Returns the number of faces added, or an error if the file contains none.
+    export add-font: func(font: font) -> result<u32, string>;
+    /// Removes the instance's registered fonts. Existing template handles retain their fonts.
+    export clear-fonts: func();
     export compile-template: func(options: render-options) -> result<template-handle, string>;
     /// Compiles and lays out a document with the supplied inputs, without exporting a PDF.
     /// Document errors and warnings are returned in the list. Locations are 1-based.

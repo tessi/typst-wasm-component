@@ -14,6 +14,7 @@ use typst::{
     diag::{FileError, FileResult, PackageError, Severity, SourceDiagnostic, SourceResult, Warned},
     foundations::{Bytes, Dict, FromValue, IntoValue, Value},
     syntax::{FileId, Source, VirtualRoot, package::PackageVersion},
+    text::Font,
 };
 use typst_as_lib::{
     TypstEngine, TypstTemplateMainFile,
@@ -36,6 +37,8 @@ static TEMPLATES: LazyLock<Mutex<Templates>> = LazyLock::new(|| {
         engines: HashMap::new(),
     })
 });
+
+static INSTANCE_FONTS: Mutex<Vec<Font>> = Mutex::new(Vec::new());
 
 fn json_to_typst(val: JsonValue) -> Value {
     match val {
@@ -238,11 +241,18 @@ fn build_template(
     options: bindings::RenderOptions,
     file_resolver: impl FileResolver + Send + Sync + 'static,
 ) -> TypstEngine<TypstTemplateMainFile> {
-    TypstEngine::builder()
-        .main_file(options.template.as_str())
-        .fonts(options.fonts)
-        .add_file_resolver(file_resolver)
-        .build()
+    let builder = TypstEngine::builder().main_file(options.template.as_str());
+    let builder = if options.fonts.is_empty() {
+        // Each engine keeps its own references to the parsed fonts.
+        let fonts = INSTANCE_FONTS
+            .lock()
+            .expect("instance font registry poisoned")
+            .clone();
+        builder.fonts(fonts)
+    } else {
+        builder.fonts(options.fonts)
+    };
+    builder.add_file_resolver(file_resolver).build()
 }
 
 fn parse_inputs(data: &str) -> Result<Dict, String> {
@@ -271,6 +281,27 @@ fn with_compiled_document<T>(
 }
 
 impl Guest for Component {
+    fn add_font(font: bindings::Font) -> Result<u32, String> {
+        let fonts: Vec<_> = Font::iter(Bytes::new(font)).collect();
+        if fonts.is_empty() {
+            return Err("Font file contains no usable faces".into());
+        }
+
+        let count = fonts.len() as u32;
+        INSTANCE_FONTS
+            .lock()
+            .expect("instance font registry poisoned")
+            .extend(fonts);
+        Ok(count)
+    }
+
+    fn clear_fonts() {
+        INSTANCE_FONTS
+            .lock()
+            .expect("instance font registry poisoned")
+            .clear();
+    }
+
     fn compile_template(
         options: bindings::RenderOptions,
     ) -> Result<bindings::TemplateHandle, String> {

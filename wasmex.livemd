@@ -74,10 +74,15 @@ defmodule Typst do
 
   # ----
 
-  def compile_template(pid, template, fonts) do
+  def add_font(pid, font) do
+    {:ok, result} = Wasmex.Components.call_function(pid, :"add-font", [font], 10_000)
+    result
+  end
+
+  def compile_template(pid, template) do
     render_options = %{
       template: template,
-      fonts: fonts
+      fonts: []
     }
 
     {:ok, result} = Wasmex.Components.call_function(pid, :"compile-template", [render_options], 10_000)
@@ -100,6 +105,12 @@ end
 
 ```elixir
 {:ok, pid} = Typst.start_link()
+
+for name <- ["OpenSans-Regular.ttf", "FiraMath-Regular.otf"] do
+  font = name |> Kino.FS.file_path() |> File.read!() |> :binary.bin_to_list()
+  {:ok, _face_count} = Typst.add_font(pid, font)
+end
+
 {:ok, current_template} = Agent.start_link(fn -> nil end)
 ```
 
@@ -176,11 +187,9 @@ template_cell = Kino.Input.textarea("Template", default: default_invoice)
 ```elixir
 template = Kino.Input.read(template_cell)
 
-opens_sans = Kino.FS.file_path("OpenSans-Regular.ttf") |> File.read!() |> :binary.bin_to_list()
-fira_math = Kino.FS.file_path("FiraMath-Regular.otf") |> File.read!() |> :binary.bin_to_list()
 {:ok, handle} =
   Agent.get_and_update(current_template, fn previous_handle ->
-    case Typst.compile_template(pid, template, [opens_sans, fira_math]) do
+    case Typst.compile_template(pid, template) do
       {:ok, new_handle} = result ->
         if previous_handle != nil do
           Typst.free_template(pid, previous_handle)
@@ -270,13 +279,12 @@ data = %{
 }
 
 {:ok, pdf} = Typst.render_pdf(pid, handle, data)
-length(pdf) |> IO.inspect(label: "PDF size")
+pdf = IO.iodata_to_binary(pdf)
+byte_size(pdf) |> IO.inspect(label: "PDF size")
 
 Kino.Download.new(
-  fn -> :binary.list_to_bin(pdf) end,
+  fn -> pdf end,
   filename: "output.pdf",
   label: "Download PDF"
 )
 ```
-
-<!-- livebook:{"offset":6474,"stamp":{"token":"XCP.eGPxw7WqW8ouL3TKb9VTtKxU-kqLYsChr5_bpNu8ZJ_TXGCVXjhlpIi7IAq4aqHwq1_mQ3213g76ylwtncK_3q0QyZNmzsbX8smgaw","version":2}} -->
